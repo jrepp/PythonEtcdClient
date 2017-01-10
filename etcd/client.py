@@ -36,14 +36,24 @@ _SSL_CLIENT_KEY_FILEPATH = environ.get(
                             '') or None
 
 
-class _Ssl3HttpAdapter(HTTPAdapter):
+class _SslHttpAdapter(HTTPAdapter):
     """"Transport adapter" that allows us to use SSLv3."""
 
     def init_poolmanager(self, connections, maxsize, block=False):
         self.poolmanager = PoolManager(num_pools=connections,
                                        maxsize=maxsize,
                                        block=block,
-                                       ssl_version=ssl.PROTOCOL_SSLv3)
+                                       ssl_version=self.best_ssl_version())
+
+    def best_ssl_version(self):
+        # Use recommended settings from ssl module docs with fallbacks to
+        # earlier module definitions
+        # https://docs.python.org/2/library/ssl.html#ssl.PROTOCOL_TLS
+        versions = ['PROTOCOL_TLS', 'PROTOCOL_SSLv3', 'PROTOCOL_SSLv23']
+        for v in versions:
+            if v in ssl.__dict__:
+                return ssl.__dict__[v]
+        raise ValueError('Supported SSL protocol not found')
 
 
 class _Modules(object):
@@ -159,7 +169,7 @@ class Client(object):
         self.__session = requests.Session()
 
         # Define an adapter for when SSL is requested.
-        self.__session.mount('https://', _Ssl3HttpAdapter())
+        self.__session.mount('https://', _SslHttpAdapter())
 
 # TODO: Remove the version check after debugging.
 # TODO: Can we implicitly read the version from the response/headers?
