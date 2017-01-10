@@ -37,7 +37,7 @@ _SSL_CLIENT_KEY_FILEPATH = environ.get(
 
 
 class _SslHttpAdapter(HTTPAdapter):
-    """"Transport adapter" that allows us to use SSLv3."""
+    """"Transport adapter" for requests module that creates TLS connections."""
 
     def init_poolmanager(self, connections, maxsize, block=False):
         self.poolmanager = PoolManager(num_pools=connections,
