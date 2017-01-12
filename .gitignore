@@ -5,5 +5,6 @@
 /dist
 /local
 *.pyc
+*.swp
 /etcd.egg-info
 /build
