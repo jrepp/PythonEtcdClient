@@ -1,6 +1,10 @@
+import random
+import logging
+
 import requests
 import ssl
-import logging
+import semver
+import simplejson
 
 from os import environ
 from requests.exceptions import ConnectionError
@@ -122,7 +126,9 @@ class Client(object):
     :raises: ValueError
     """
 
-    def __init__(self, host='127.0.0.1', port=4001, 
+    def __init__(self,
+                 host='127.0.0.1',
+                 port=4001,
                  is_ssl=False, ssl_do_verify=_SSL_DO_VERIFY, 
                  ssl_ca_bundle_filepath=_SSL_CA_BUNDLE_FILEPATH, 
                  ssl_client_cert_filepath=_SSL_CLIENT_CRT_FILEPATH, 
@@ -171,42 +177,55 @@ class Client(object):
         # Define an adapter for when SSL is requested.
         self.__session.mount('https://', _SslHttpAdapter())
 
-# TODO: Remove the version check after debugging.
-# TODO: Can we implicitly read the version from the response/headers?
-#        self.__version = self.server.get_version()
-#        self.debug("Version: %s" % (self.__version))
-#
-#        if self.__version.startswith('0.2') is False:
-#            raise ValueError("We don't support an etcd version older than 0.2.0 .")
+        self.init_version()
 
-        self.__machines = [[dict(machine_info)['etcd'], None]
-                            for machine_info
-                            in self.server.get_machines()]
+        # TODO: determine when machines tree went away for version check
+        if semver.match(self.__version, '<3.0.0'):
+            self.__machines = [[dict(machine_info)['etcd'], None]
+                for machine_info in self.server.get_machines()]
+        else:
+            self.__machines = [[member['clientURLs'][0], None] 
+                for member in self.server.get_members()]
 
         _logger.debug("Cluster machines: %s", self.__machines)
 
-        # This will fail if the given server does appear in the published list 
-        # of servers. This might only happen because of a hostname being used 
-        # instead of an IP, or vice-versa.
         self.__machine_index = None
-        i = 0
-        for (prefix, last_fail_dt) in self.__machines:
-            if prefix == self.__prefix:
-                self.__machine_index = i
-                break
-
-            i += 1
-
-        if self.__machine_index is None:
-            raise ValueError("Could not identify given prefix [%s] among "
-                             "published prefixes: %s" % 
-                             (self.__prefix, self.__machines))
-
+        self.cycle_machine_index()
+        
         _logger.debug("The initial machine is at index (%d).",
                       self.__machine_index)
 
     def __str__(self):
         return ('<ETCD %s>' % (self.__prefix))
+
+    def debug(self, msg):
+        _logger.debug(msg)
+    
+    def init_version(self):
+        self.__version = self.server.get_version()
+        self.debug("ETCD Version: %s" % (self.__version))
+
+        if not semver.match(self.__version, '>=0.2.0'):
+            raise ValueError("We don't support an etcd version older than 0.2.0 .")
+
+    def cycle_machine_index(self):
+        if len(self.__machines) == 0:
+            return
+        # Always rotate to a uniformly random instance to avoid hitting 
+        # the same node in all clients
+        self.__machine_index = random.randint(0, len(self.__machines) - 1)
+
+    def raise_etcd_error(self, request):
+        content_type = request.headers.get('Content-Type')
+        if content_type != 'application/json':
+            raise Exception('etcd-error-bad-content-type: {0}'.format(content_type))
+             
+        error = simplejson.loads(request.content)
+        code = error['errorCode']
+        msg = error['message']
+        cause = error['cause']
+        raise Exception('etcd-error-{0} [{1}]: {2}'.format(
+            code, cause, msg))
 
     def send(self, version, verb, path, value=None, parameters=None, data=None, 
              module=None, return_raw=False, allow_reconnect=True):
@@ -318,6 +337,10 @@ class Client(object):
 
             _logger.debug("Retrying with next machine: %s", self.__prefix)
 
+        # Handle 400 response
+        if r.status_code == 400:
+            self.raise_etcd_error(r)
+            
         r.raise_for_status()
 
         if return_raw is True:

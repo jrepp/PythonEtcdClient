@@ -1,4 +1,5 @@
 import requests
+import simplejson
 
 from etcd.common_ops import CommonOps
 from etcd.response import ResponseV2 
@@ -21,10 +22,17 @@ class ServerOps(CommonOps):
         # Version should look like "etcd v0.2.0".
         prefix = 'etcd v'
 
-        if version_string.startswith(prefix) is False:
-            raise ValueError("Could not parse server version: %s" % (r.text))
-
-        return version_string[len(prefix):]
+        if version_string.startswith(prefix):
+            return version_string[len(prefix):]
+        elif version_string.startswith('{'):
+            version_doc = simplejson.loads(version_string)
+            version_property = version_doc.get('etcdserver')
+            if not version_property: 
+                raise ValueError("Invalid version response: %s" % (version_string))
+            return version_property
+        else:
+            raise ValueError("Could not parse server version from: %s" % (version_string))
+        
 
     def get_leader_url_prefix(self):
         """Return the URL prefix of the leader host.
@@ -47,6 +55,12 @@ class ServerOps(CommonOps):
 
         for machine in response.node.children:
             yield parse_qsl(machine.value)
+
+    def get_members(self):
+        response = self.client.send(2, 'get', '/members', allow_reconnect=True, return_raw=True)
+        members_doc = simplejson.loads(response.content)
+        return members_doc.get('members')
+
 
     def get_dashboard_url(self):
         """Return the URL for the dashboard on the server currently connected-
