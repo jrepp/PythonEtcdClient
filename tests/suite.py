@@ -51,6 +51,8 @@ def setup_requests_logging(verbose):
 
 def run():
     parser = OptionParser()
+    parser.add_option('-l', '--list', dest='list', action='store_true',
+        help='List all test cases')
     parser.add_option('-r', '--requests', dest='requests', action='store_true',
         help='Enable logging of requests')
     parser.add_option('-v', '--verbose', dest='verbose', action='store_true',
@@ -59,14 +61,17 @@ def run():
         help='Filter test cases with a regular expression')
     options, args = parser.parse_args()
 
-    if options.requests:
-        setup_requests_logging(options.verbose)
-
     all_tests = [
         test_system.suite(),
         test_node.suite(),
         test_directory.suite(),
     ]
+
+    if options.list:
+        for suite in all_tests:
+            for t in suite:
+                print t.id()
+        return
 
     if options.filter:
         pattern = re.compile(options.filter)
@@ -85,6 +90,9 @@ def run():
     test_verbosity = 1 
     if options.verbose:
         test_verbosity = 3
+
+    if options.requests:
+        setup_requests_logging(options.verbose)
 
     unittest.TextTestRunner(verbosity=test_verbosity, failfast=True).run(all_tests)
 
