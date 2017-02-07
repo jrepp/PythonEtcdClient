@@ -1,5 +1,6 @@
 import unittest
 import random
+import etcd.errors
 
 import common
 
@@ -45,10 +46,8 @@ class NodeTestCase(common.TestCase):
         self.assertEqual(n.value, u'correct_value')
 
         n2 = self.client.node.delete_if_value(n.key, 'wrong_value')
-        print n2.json
-        self.assertTrue(n2.value)
-        self.assertEqual(n2.value, u'correct_value')
-        self.assertEqual(n2.modified_index, n.modified_index)
+        self.assertEqual(n2.error_code, etcd.errors.TestFailed)
+        self.assertEqual(n2.value, None)
 
         n4 = self.client.node.get(n.key)
         self.assertEqual(n4.modified_index, n.modified_index)
