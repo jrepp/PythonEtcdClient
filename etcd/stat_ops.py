@@ -5,7 +5,6 @@ from collections import namedtuple
 from datetime import timedelta, datetime
 
 from etcd.common_ops import CommonOps
-from etcd.response import ResponseV2 
 
 
 class StatOps(CommonOps):

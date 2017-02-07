@@ -2,7 +2,7 @@ from requests.exceptions import HTTPError, ChunkedEncodingError
 from requests.status_codes import codes
 
 from etcd.exceptions import EtcdPreconditionException, EtcdEmptyResponseError,\
-                            EtcdWaitFaultException, translate_exceptions
+                            EtcdWaitFaultException
 
 
 class CommonOps(object):
@@ -82,8 +82,8 @@ class CommonOps(object):
         :param current_index: Current index to check
         :type current_index: int or None
 
-        :returns: Response object
-        :rtype: :class:`etcd.response.ResponseV2`
+        :returns: Node object
+        :rtype: :class:`etcd.response.Node`
         """
 
         fq_path = self.get_fq_node_path(path)
@@ -117,10 +117,8 @@ class CommonOps(object):
         except HTTPError as e:
             if e.response.status_code == codes.precondition_failed:
                 raise EtcdPreconditionException()
-
             raise
 
-    @translate_exceptions
     def wait(self, path, recursive=False, force_consistent=False):
         """Long-poll on the given path until it changes.
 
@@ -131,8 +129,8 @@ class CommonOps(object):
                           its descendants.
         :type recursive: bool
 
-        :returns: Response object
-        :rtype: :class:`etcd.response.ResponseV2` or None
+        :returns: Node object
+        :rtype: :class:`etcd.response.Node` or None
 
         :raises: KeyError
         """

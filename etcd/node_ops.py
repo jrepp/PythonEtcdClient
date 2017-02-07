@@ -5,10 +5,10 @@ from requests.status_codes import codes
 
 import etcd.config
 
-from etcd.exceptions import EtcdPreconditionException, EtcdAtomicWriteError, \
-                            translate_exceptions
+from etcd.exceptions import EtcdPreconditionException, EtcdAtomicWriteError
+                            
 from etcd.common_ops import CommonOps
-from etcd.response import ResponseV2 
+from etcd.response import Node 
 
 _logger = logging.getLogger(__name__)
 
@@ -16,7 +16,6 @@ _logger = logging.getLogger(__name__)
 class NodeOps(CommonOps):
     """Common key-value functions."""
 
-    @translate_exceptions
     def get(self, path, force_consistent=False, force_quorum=False):
         """Get the given node.
 
@@ -27,8 +26,8 @@ class NodeOps(CommonOps):
                                  propagation is not a concern.
         :type force_consistent: bool
 
-        :returns: Response object
-        :rtype: :class:`etcd.response.ResponseV2`
+        :returns: Node object
+        :rtype: :class:`etcd.response.Node`
 
         :raises: KeyError
         """
@@ -43,7 +42,6 @@ class NodeOps(CommonOps):
         fq_path = self.get_fq_node_path(path)
         return self.client.send(2, 'get', fq_path, parameters=parameters)
 
-    @translate_exceptions
     def set(self, path, value, ttl=None):
         """Set the given node.
 
@@ -56,8 +54,8 @@ class NodeOps(CommonOps):
         :param ttl: Number of seconds until expiration
         :type ttl: int or None
 
-        :returns: Response object
-        :rtype: :class:`etcd.response.ResponseV2`
+        :returns: Node object
+        :rtype: :class:`etcd.response.Node`
         """
 
         fq_path = self.get_fq_node_path(path)
@@ -68,7 +66,6 @@ class NodeOps(CommonOps):
 
         return self.client.send(2, 'put', fq_path, value, data=data)
 
-    @translate_exceptions
     def delete(self, path, current_value=None, current_index=None):
         """Delete the given node.
 
@@ -81,8 +78,8 @@ class NodeOps(CommonOps):
         :param current_index: Current index to check
         :type current_index: int or None
 
-        :returns: Response object
-        :rtype: :class:`etcd.response.ResponseV2`
+        :returns: Node object
+        :rtype: :class:`etcd.response.Node`
         """
 
         if current_value is not None or current_index is not None:
@@ -93,7 +90,6 @@ class NodeOps(CommonOps):
         fq_path = self.get_fq_node_path(path)
         return self.client.send(2, 'delete', fq_path)
 
-    @translate_exceptions
     def delete_if_value(self, path, current_value):
         """Only delete the given node if it's at the given value. 
 
@@ -103,14 +99,13 @@ class NodeOps(CommonOps):
         :param current_value: Current value to check
         :type current_value: string
 
-        :returns: Response object
-        :rtype: :class:`etcd.response.ResponseV2`
+        :returns: Node object
+        :rtype: :class:`etcd.response.Node`
         """
 
         return self.compare_and_delete(path, is_dir=False, 
                                        current_value=current_value)
 
-    @translate_exceptions
     def delete_if_index(self, path, current_index):
         """Only delete the given node if it's at the given index. 
 
@@ -120,14 +115,13 @@ class NodeOps(CommonOps):
         :param current_index: Current index to check
         :type current_index: int or None
 
-        :returns: Response object
-        :rtype: :class:`etcd.response.ResponseV2`
+        :returns: Node object
+        :rtype: :class:`etcd.response.Node`
         """
 
         return self.compare_and_delete(path, is_dir=False, 
                                        current_index=current_index)
 
-    @translate_exceptions
     def compare_and_swap(self, path, value, current_value=None, 
                          current_index=None, prev_exists=None, ttl=None):
         """The base compare-and-swap function for atomic comparisons. A  
@@ -151,8 +145,8 @@ class NodeOps(CommonOps):
         :param ttl: The number of seconds until the node expires
         :type ttl: int or None
 
-        :returns: Response object
-        :rtype: :class:`etcd.response.ResponseV2`
+        :returns: Node object
+        :rtype: :class:`etcd.response.Node`
 
         :raises: :class:`etcd.exceptions.EtcdPreconditionException`
         """
@@ -181,7 +175,6 @@ class NodeOps(CommonOps):
         return self.client.send(2, 'put', fq_path, value, data=data, 
                                 parameters=parameters)
 
-    @translate_exceptions
     def create_only(self, path, value, ttl=None):
         """A convenience function that will only set a node if it doesn't 
         already exist.
@@ -195,14 +188,13 @@ class NodeOps(CommonOps):
         :param ttl: The number of seconds until the node expires
         :type ttl: int or None
 
-        :returns: Response object
-        :rtype: :class:`etcd.response.ResponseV2`
+        :returns: Node object
+        :rtype: :class:`etcd.response.Node`
         """
 
         # This will have a return "action" of "create".
         return self.compare_and_swap(path, value, prev_exists=False, ttl=ttl)
 
-    @translate_exceptions
     def update_only(self, path, value, ttl=None):
         """A convenience function that will only set a node if it already
         exists.
@@ -217,13 +209,12 @@ class NodeOps(CommonOps):
         :type ttl: int or None
 
         :returns: Response object
-        :rtype: :class:`etcd.response.ResponseV2`
+        :rtype: :class:`etcd.response.Node`
         """
 
         # This will have a return "action" of "update".
         return self.compare_and_swap(path, value, prev_exists=True, ttl=ttl)
 
-    @translate_exceptions
     def update_if_index(self, path, value, current_index, ttl=None):
         """A convenience function that will only set a node if its existing
         "modified index" matches.
@@ -240,14 +231,13 @@ class NodeOps(CommonOps):
         :param ttl: The number of seconds until the node expires
         :type ttl: int or None
 
-        :returns: Response object
-        :rtype: :class:`etcd.response.ResponseV2`
+        :returns: Node object
+        :rtype: :class:`etcd.response.Node`
         """
 
         # This will have a return "action" of "compareAndSwap".
         return self.compare_and_swap(path, value, current_index=current_index, ttl=ttl)
 
-    @translate_exceptions
     def update_if_value(self, path, value, current_value, ttl=None):
         """A convenience function that will only set a node if its existing value
         matches.
@@ -264,18 +254,16 @@ class NodeOps(CommonOps):
         :param ttl: The number of seconds until the node expires
         :type ttl: int or None
 
-        :returns: Response object
-        :rtype: :class:`etcd.response.ResponseV2`
+        :returns: Node object
+        :rtype: :class:`etcd.response.Node`
         """
 
         # This will have a return "action" of "compareAndSwap".
         return self.compare_and_swap(path, value, current_value=current_value, ttl=ttl)
 
-    @translate_exceptions
     def wait(self, path, force_consistent=False):
         return super(NodeOps, self).wait(path, force_consistent=force_consistent)
 
-    @translate_exceptions
     def atomic_update(self, path, update_value_cb,
                       max_attempts=etcd.config.ATOMIC_MAX_ATTEMPTS, ttl=None):
         """Retrieve the value for the given path, pass it to the callback, get 

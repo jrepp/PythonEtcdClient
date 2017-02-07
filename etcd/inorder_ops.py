@@ -18,16 +18,18 @@ class _InOrder(CommonOps):
 
     def create(self):
         """Explicitly create the directory. Not usually necessary.
-        :returns: Response object
-        :rtype: :class:`etcd.response.ResponseV2`
+
+        :returns: Node object
+        :rtype: :class:`etcd.response.Node`
         """
 
         return self.client.directory.create(self.__path)
 
     def delete(self):
         """Delete the directory.
-        :returns: Response object
-        :rtype: :class:`etcd.response.ResponseV2`
+
+        :returns: Node object
+        :rtype: :class:`etcd.response.Node`
         """
 
         return self.client.directory.delete_recursive(self.__path)
@@ -41,8 +43,8 @@ class _InOrder(CommonOps):
         :param value: Value to be automatically-assigned a key.
         :type value: string
 
-        :returns: Response object
-        :rtype: :class:`etcd.response.ResponseV2`
+        :returns: Node object
+        :rtype: :class:`etcd.response.Node`
         """
 
 # TODO: Can we send a TTL?
@@ -56,8 +58,8 @@ class _InOrder(CommonOps):
         :param sorted: Return nodes in the proper, chronological order.
         :type sorted: bool
 
-        :returns: Response object
-        :rtype: :class:`etcd.response.ResponseV2`
+        :returns: Node object
+        :rtype: :class:`etcd.response.Node`
         """
 
         parameters = {}

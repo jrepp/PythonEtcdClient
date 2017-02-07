@@ -1,12 +1,16 @@
-import pytz
 import simplejson
+import logging
+
+import dateutil.parser
+import requests
 
 import etcd.exceptions
 
 from collections import namedtuple
 from os.path import basename
-from pytz import timezone
 from datetime import datetime, timedelta
+
+_logger = logging.getLogger(__name__)
 
 A__PREVNODE = '_(pnode)'
 
@@ -18,26 +22,24 @@ A_DELETE = 'delete'
 A_CAS = 'compareAndSwap'
 A_CAD = 'compareAndDelete'
 
-def _build_node_object(action, node):
-    if 'dir' not in node:
-        node['dir'] = False
-
-    if node['dir'] == True:
-        if action in (A_DELETE, A_CAD):
-            return ResponseV2DeletedDirectoryNode(action, node)
-# TODO: Specifically, what actions can happen for a DIRECTORY?
-        else:
-            return ResponseV2AliveDirectoryNode(action, node)
+def _process_ttl(json):
+    """
+    Parse and convert a node TTL from the JSON document
+    """
+    try:
+        expiration = json['expiration']
+    except KeyError:
+        ttl = None
+        expiration = None
     else:
-        if action in (A_DELETE, A_CAD):
-            return ResponseV2DeletedNode(action, node)
-# TODO: Specifically, what actions can happen for a non-directory?
-        else:
-            return ResponseV2AliveNode(action, node)
+        # print '_process_ttl {}'.format(expiration)
+        ttl = json['ttl'],
+        expiration = dateutil.parser.parse(expiration)
+    return (ttl, expiration)
 
 
-class ResponseV2BasicNode(object):
-    """Base-class representing all nodes: deleted, alive, or a collection.
+class Node(object):
+    """Represent all nodes: deleted, alive, missing or collection.
 
     :param action: Action type
     :param node: Node dictionary
@@ -45,187 +47,13 @@ class ResponseV2BasicNode(object):
     :type action: string
     :type node: dictionary
 
-    :returns: Response object
-    :rtype: etcd.response.ResponseV2
+    :returns: Node object
+    :rtype: etcd.response.Node
     """
 
-    def __init__(self, action, node):
-        self.action = action
-        self.raw_node = node
-        self.created_index = node['createdIndex']
-        self.modified_index = node['modifiedIndex']
-        self.key = node['key']
-
-        # This is as involved as we'll get with whether nodes are hidden. Any 
-        # more, and we'd have to manage and, therefore, translate every key 
-        # reported by the server.
-        self.is_hidden = basename(node['key']).startswith('_')
-
-        # >> Process TTL-related stuff. 
-
+    def __init__(self, response, verb, path):
         try:
-            expiration = node['expiration']
-        except KeyError:
-            self.expiration = None
-            self.ttl = None
-            self.ttl_phrase = 'None'
-        else:
-            self.ttl = node['ttl']
-
-            first_part = expiration[:19]
-            naive_dt = datetime.strptime(first_part, '%Y-%m-%dT%H:%M:%S')
-            tz_offset_hours = int(expiration[-5:-3])
-            tz_offset_minutes = int(expiration[-2:])
-
-            tz_offset = timedelta(seconds=(tz_offset_hours * 60 * 60 + 
-                                           tz_offset_minutes * 60))
-
-            self.expiration = (naive_dt + tz_offset).replace(tzinfo=pytz.UTC)
-            self.ttl_phrase = ('%d: %s' % (self.ttl, self.expiration))
-
-        # <<
-
-        try:
-            self.initialize(node)
-        except NotImplementedError:
-            pass
-
-    def initialize(self, node):
-        """This function acts as the constructor for subclasses.
-
-        :param node: Node dictionary
-        :type node: dictionary
-        """
-
-        raise NotImplementedError()
-
-    def __repr__(self):
-        return ('<NODE(%s) [%s] [%s] IS_HID=[%s] IS_DEL=[%s] IS_DIR=[%s] '
-                'IS_COLL=[%s] TTL=[%s] CI=(%d) MI=(%d)>' % 
-                (self.__class__.__name__, self.action, self.key, 
-                 self.is_hidden, self.is_deleted, self.is_directory, 
-                 self.is_collection, self.ttl_phrase, self.created_index, 
-                 self.modified_index))
-
-    @property
-    def is_deleted(self):
-        """Is the node deleted?
-
-        :rtype: bool
-        """
-
-        return False
-
-    @property
-    def is_directory(self):
-        """Is the node a directory?
-
-        :rtype: bool
-        """
-
-        return False
-
-    @property
-    def is_collection(self):
-        """If the node is a directory, do we have the collection of children 
-        nodes?
-        
-        :rtype: bool
-        """
-
-        return False
-
-
-class ResponseV2AliveNode(ResponseV2BasicNode):
-    "Base-class representing a single, non-deleted node."
-
-    def initialize(self, node):
-        self.value = node['value']
-
-
-class ResponseV2DeletedNode(ResponseV2BasicNode):
-    "Represents a single, deleted node."
-
-    @property
-    def is_deleted(self):
-        return True
-
-
-class ResponseV2DirectoryNode(ResponseV2BasicNode):
-    """A base-class representing a single directory node."""
-
-    @property
-    def is_directory(self):
-        return True
-
-
-class ResponseV2AliveDirectoryNode(ResponseV2DirectoryNode):
-    """Represents a directory node, which may also be accompanied by children 
-    that can be enumerated.
-    """
-
-    def initialize(self, node):
-        if node.get('dir', False) is True:
-            self.__is_collection = True
-            self.__raw_nodes = node.get('nodes', [])
-        else:
-            self.__is_collection = False
-            self.__raw_nodes = None
-
-    def __repr__(self):
-        node_count_phrase = (len(self.__raw_nodes) \
-                                if self.__raw_nodes is not None \
-                                else '<NA>')
-
-        return ('<NODE(%s) [%s] [%s] IS_HID=[%s] TTL=[%s] IS_DIR=[%s] '
-                'IS_COLL=[%s] COUNT=[%s] CI=(%d) MI=(%d)>' % 
-                (self.__class__.__name__, self.action, self.key, 
-                 self.is_hidden, self.ttl_phrase, self.is_directory,
-                 self.__is_collection, node_count_phrase, 
-                 self.created_index, self.modified_index))
-
-    @property
-    def is_collection(self):
-        return self.__is_collection
-
-    @property
-    def children(self):
-        if self.__is_collection is False:
-            raise ValueError("This directory node is not a collection.")
-
-# TODO: Cache the new objects for the benefit of repeated enumerations?
-        for node in self.__raw_nodes:
-            yield _build_node_object(self.action, node)
-
-
-class ResponseV2DeletedDirectoryNode(ResponseV2DirectoryNode):
-    """Represents a single DIRECTORY node either appearing in isolation or
-    among siblings.
-    """
-
-    @property
-    def is_deleted(self):
-        return True
-
-
-class ResponseV2(object):
-    """An object that describes a response for every V2 request.
-
-    :param response: Raw Requests response object
-    :param request_verb: Request verb ('get', post', 'put', etc..)
-    :param request_path: Node key
-
-    :type response: requests.models.Response
-    :type request_verb: string
-    :type request_path: string
-
-    :returns: Response object
-    :rtype: etcd.response.ResponseV2
-    """
-
-    def __init__(self, response, request_verb, request_path):
-        try:
-            response_raw = response.json()
+            json = response.json()
         except simplejson.JSONDecodeError:
             # Bug #1120: Wait will timeout with a JSON-message of zero-length.
             if response.text == '':
@@ -233,20 +61,74 @@ class ResponseV2(object):
             else:
                 raise
 
-        self.node = _build_node_object(response_raw['action'], 
-                                       response_raw['node'])
+        _logger.debug("Response JSON: {}".format(json))
+        self.json = json
 
-        # We have to fake the action (since we don't know what the last actual 
-        # was), but we can reasonably assume it was a SET action (it doesn't 
-        # really matter, as long as it's not a DELETE/CAD action).
-# TODO: We're assuming that the 'dir' flag will be set, in prevNode, when 
-#       appropriate.
-        if 'prevNode' in response_raw:
-            self.prev_node = _build_node_object(A__PREVNODE, 
-                                                response_raw['prevNode'])
-        else:
+        if 'errorCode' in json:
+            self.is_deleted = response.status_code == requests.status_codes.codes.not_found
+            self.is_error = True
+            self.is_hidden = False
+            self.is_directory = False
+            self.is_collection = False
+            self.error_code = json['errorCode']
+            self.error_message = json['message']
+            self.key = json['cause']
+            self.index = json['index']
+            self.created_index = None
+            self.modified_index = None
             self.prev_node = None
+            self.children = None
+            self.ttl = None
+            self.expiration = None
+            self.action = None
+            return
+        else:
+            self.is_error = False
+
+        self.prev_node = json.get('prevNode')
+
+        action = json.get('action')
+        node = json.get('node') 
+
+        self.children = []
+        self.is_directory = False
+        self.is_collection = False
+        self.is_deleted = False
+        self.created_index = node['createdIndex']
+        self.modified_index = node['modifiedIndex']
+        self.key = node['key']
+        self.is_deleted = action in (A_DELETE, A_CAD)
+
+        # This is as involved as we'll get with whether nodes are hidden. Any 
+        # more, and we'd have to manage and, therefore, translate every key 
+        # reported by the server.
+        self.is_hidden = basename(node['key']).startswith('_')
+
+        # >> Process TTL-related stuff. 
+        self.ttl, self.expiration = _process_ttl(node)
+        
+        # Alive value nodes will contain values
+        self.value = node.get('value')
+
+        if node.get('dir'):
+            if node.get('dir', False) is True:
+                self.is_collection = True
+                self.children = node.get('nodes', [])
+            else:
+                self.is_collection = False
+
+        self.action = action
+        self.node = node
 
     def __repr__(self):
-        return ('<RESPONSE: %s>' % (self.node))
+        node_count_phrase = (len(self.children) if self.children else '<NA>')
+        error_phrase = ('{} ({})'.format(self.error_message, self.error_code) if self.is_error else '<NA>')
+        ttl_phrase = '{}: {}'.format(self.ttl, self.expiration)
+        return '<NODE({}) [{}] ERROR=[{}] IS_HID=[{}] IS_DEL=[{}] IS_DIR=[{}] ' \
+                    'IS_COLL=[{}] COUNT=[{}] TTL=[{}] CI=({}) MI=({})>'.format(
+                    self.key, self.action, error_phrase,
+                    self.is_hidden, self.is_deleted, self.is_directory, 
+                    self.is_collection, node_count_phrase, ttl_phrase, self.created_index, 
+                    self.modified_index)
 
+    

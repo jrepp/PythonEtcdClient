@@ -20,9 +20,14 @@ from etcd.stat_ops import StatOps
 from etcd.inorder_ops import InOrderOps
 from etcd.modules.lock import LockMod
 from etcd.modules.leader import LeaderMod
-from etcd.response import ResponseV2
+from etcd.response import Node
 
 logging.getLogger('requests.packages.urllib3').setLevel(logging.WARN)
+
+_VALID_RESPONSE_ERRORS = (
+    requests.status_codes.codes.bad_request, 
+    requests.status_codes.codes.not_found
+)
 
 _logger = logging.getLogger(__name__)
 
@@ -74,7 +79,7 @@ class _Modules(object):
     def lock(self):
         """Return an instance of the class having the lock functionality.
 
-        :rtype: :class:`etcd.response.ResponseV2`
+        :rtype: :class:`etcd.response.Node`
         """
 
         try:
@@ -208,24 +213,45 @@ class Client(object):
         if not semver.match(self.__version, '>=0.2.0'):
             raise ValueError("We don't support an etcd version older than 0.2.0 .")
 
+    def cycle_machine_index_on_failure(self):
+        """
+        Mark the current member failed, find the next alive machine
+        """
+        now_dt = datetime.now()
+        self.__machines[self.__machine_index][1] = now_dt
+
+        c = len(self.__machines)
+        i = 0
+        elected = None
+        while i < c:
+            machine_index = (self.__machine_index + 1) % c
+            (prefix, last_fail_dt) = self.__machines[machine_index]
+
+            if last_fail_dt is None or \
+               (now_dt - last_fail_dt).total_seconds() > \
+                    HOST_FAIL_WAIT_S:
+                elected = prefix
+
+            i += 1
+
+        if elected is None:
+            raise SystemError("All servers have failed: %s" % 
+                              (self.__machines,))
+
+        self.__prefix = elected
+        self.__machine_index = machine_index
+
+        _logger.debug("Retrying with next machine: %s", self.__prefix)
+
     def cycle_machine_index(self):
+        """
+        Randomly select a new member of the cluster for communication
+        """
         if len(self.__machines) == 0:
             return
         # Always rotate to a uniformly random instance to avoid hitting 
         # the same node in all clients
         self.__machine_index = random.randint(0, len(self.__machines) - 1)
-
-    def raise_etcd_error(self, request):
-        content_type = request.headers.get('Content-Type')
-        if content_type != 'application/json':
-            raise Exception('etcd-error-bad-content-type: {0}'.format(content_type))
-             
-        error = simplejson.loads(request.content)
-        code = error['errorCode']
-        msg = error['message']
-        cause = error['cause']
-        raise Exception('etcd-error-{0} [{1}]: {2}'.format(
-            code, cause, msg))
 
     def send(self, version, verb, path, value=None, parameters=None, data=None, 
              module=None, return_raw=False, allow_reconnect=True):
@@ -254,7 +280,7 @@ class Client(object):
         :type module: string or None
 
         :param return_raw: Whether to return a 
-                           :class:`etcd.response.ResponseV2` object or the raw 
+                           :class:`etcd.response.Node` object or the raw 
                            Requests response.
         :type return_raw: bool
 
@@ -262,8 +288,8 @@ class Client(object):
                                 the current host fails connection.
         :type allow_reconnect: bool
 
-        :returns: Response object
-        :rtype: :class:`etcd.response.ResponseV2`
+        :returns: Node object
+        :rtype: :class:`etcd.response.Node`
         """
 
         if parameters is None:
@@ -273,10 +299,7 @@ class Client(object):
             data = {}
 
         if version != 2:
-            raise ValueError("We were told to send a version (%d) request, "
-                             "which is not supported." % (version))
-        else:
-            response_cls = ResponseV2
+            raise ValueError("Version ({0}) request is not supported.".format(version))
 
         if module is None:
             url = ('%s/v%d%s' % (self.__prefix, version, path))
@@ -310,43 +333,19 @@ class Client(object):
 
             # If we get here, there was a connection problem. Rotate the server 
             # that we're using, excluding any that have recently failed.
+            self.cycle_machine_index_on_failure()
 
-            now_dt = datetime.now()
-            self.__machines[self.__machine_index][1] = now_dt
-
-            len_ = len(self.__machines)
-            i = 0
-            elected = None
-            while i < len_:
-                machine_index = (self.__machine_index + 1) % len_
-                (prefix, last_fail_dt) = self.__machines[machine_index]
-
-                if last_fail_dt is None or \
-                   (now_dt - last_fail_dt).total_seconds() > \
-                        HOST_FAIL_WAIT_S:
-                    elected = prefix
-
-                i += 1
-
-            if elected is None:
-                raise SystemError("All servers have failed: %s" % 
-                                  (self.__machines,))
-
-            self.__prefix = elected
-            self.__machine_index = machine_index
-
-            _logger.debug("Retrying with next machine: %s", self.__prefix)
-
-        # Handle 400 response
-        if r.status_code == 400:
-            self.raise_etcd_error(r)
             
-        r.raise_for_status()
-
+        # Pass back the requests library response object
         if return_raw is True:
             return r
 
-        return response_cls(r, verb, path)
+        # For unhandled status codes allow requests to raise 
+        if r.status_code not in _VALID_RESPONSE_ERRORS:
+            r.raise_for_status()
+
+        # Everything else is a Node (existent or otherwise)
+        return Node(r, verb, path)
 
     @property
     def session(self):

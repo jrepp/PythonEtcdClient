@@ -2,7 +2,7 @@ import requests
 import simplejson
 
 from etcd.common_ops import CommonOps
-from etcd.response import ResponseV2 
+from etcd.response import Node 
 from etcd.compat import parse_qsl
 
 
@@ -46,8 +46,8 @@ class ServerOps(CommonOps):
     def get_machines(self):
         """Return the list of servers in the cluster represented as nodes.
 
-        :returns: Response object
-        :rtype: :class:`etcd.response.ResponseV2`
+        :returns: Node object
+        :rtype: :class:`etcd.response.Node`
         """
 
         fq_path = self.get_fq_node_path('/_etcd/machines')
