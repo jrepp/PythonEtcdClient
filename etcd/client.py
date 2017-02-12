@@ -26,7 +26,9 @@ logging.getLogger('requests.packages.urllib3').setLevel(logging.WARN)
 
 _VALID_RESPONSE_ERRORS = (
     requests.status_codes.codes.bad_request, 
-    requests.status_codes.codes.not_found
+    requests.status_codes.codes.not_found,
+    requests.status_codes.codes.precondition_failed,
+    requests.status_codes.codes.forbidden,
 )
 
 _logger = logging.getLogger(__name__)
@@ -345,7 +347,7 @@ class Client(object):
             r.raise_for_status()
 
         # Everything else is a Node (existent or otherwise)
-        return Node(r, verb, path)
+        return Node().from_response(r, verb, path)
 
     @property
     def session(self):

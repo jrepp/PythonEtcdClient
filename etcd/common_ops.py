@@ -89,15 +89,12 @@ class CommonOps(object):
         fq_path = self.get_fq_node_path(path)
 
         parameters = {}
-        data = { }
 
         if current_value is not None:
-            data['prevValue'] = current_value
-
-        if current_index is not None:
-            data['prevIndex'] = current_index
-
-        if not data:
+            parameters['prevValue'] = current_value
+        elif current_index is not None:
+            parameters['prevIndex'] = current_index
+        else:
             raise ValueError("CAD requires a comparison argument.")
 
         if is_recursive is not None:
@@ -109,16 +106,9 @@ class CommonOps(object):
 
         parameters['dir'] = 'true' if is_dir is True else 'false'
         
+        return self.client.send(2, 'delete', fq_path, parameters=parameters)
 
-        try:
-            return self.client.send(2, 'delete', fq_path, 
-                                    parameters=parameters,
-                                    data=data)
-        except HTTPError as e:
-            if e.response.status_code == codes.precondition_failed:
-                raise EtcdPreconditionException()
-            raise
-
+        
     def wait(self, path, recursive=False, force_consistent=False):
         """Long-poll on the given path until it changes.
 

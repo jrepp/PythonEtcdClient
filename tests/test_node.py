@@ -12,7 +12,7 @@ class NodeTestCase(common.TestCase):
         n = self.random_node()
         self.assertTrue(n)
         self.assertFalse(n.prev_node)
-        self.assertFalse(n.value)
+        self.assertIsNotNone(n.value)
 
     def test_create_only(self):    
         k = self.random_key('/create_only')
@@ -54,42 +54,50 @@ class NodeTestCase(common.TestCase):
     
     def test_if_index(self): 
         n = self.random_node()
-        n2 = self.client.node.set(n.key, 'value')
-        self.assertFalse(n3.is_deleted)
-        self.assertEqual(n3.value, 'value')
+        n2 = self.client.node.set(n.key, 'value updated')
+        self.assertFalse(n2.is_deleted)
+        self.assertEqual(n2.value, 'value updated')
+
         n3 = self.client.node.delete_if_index(n.key, n.modified_index) # wrong
         self.assertFalse(n3.value)
         self.assertFalse(n3.is_deleted)
+        self.assertEqual(n3.error_code, etcd.errors.TestFailed)
+
         n4 = self.client.node.delete_if_index(n.key, n2.modified_index) # correct
-        self.assertTrue(n4.value)
+        self.assertIsNone(n4.value)
         self.assertTrue(n4.is_deleted)
     
     def test_update_if_index(self):
         n = self.random_node()
         n2 = self.client.node.update_if_index(n.key, 15, n.created_index)
         self.assertTrue(n2)
-        self.assertEqual(n2.value, 15)
+        self.assertEqual(int(n2.value), 15)
 
     def test_update_if_value(self):
         n = self.random_node()
         n2 = self.client.node.set(n.key, 20)
-        self.assertEqual(n2.value, 5)
-        n3 = self.client.node.update_if_value(n.key, 20, 5)
-        self.assertEqual(n3.value, 5)
+
+        # Update with bad CAS, no change
+        n3 = self.client.node.update_if_value(n.key, 30, 21)
+        self.assertEqual(int(n2.value), 20)
+        
+        # Update weith correct cas
+        n4 = self.client.node.update_if_value(n.key, 5, 20)
+        self.assertEqual(int(n4.value), 5)
 
     def test_compare_and_swap(self):
         n = self.random_node()
         n = self.client.node.set(n.key, 5)
-        self.assertTrue(n.value, 5)
+        self.assertTrue(int(n.value), 5)
         n = self.client.node.compare_and_swap(n.key, 30, current_value=5, prev_exists=True)
-        self.assertTrue(n.value, 30)
+        self.assertEqual(int(n.value), 30)
 
     def test_subkey(self):
         d = self.random_dir()
-        n20 = self.client.node.set('/{}/subkey1'.format(d.key), 20)
-        n30 = self.client.node.set('/{}/subkey2'.format(d.key), 30)
-        self.assertEqual(n20.value, 20)
-        self.assertEqual(n20.value, 20)
+        n20 = self.client.node.set('{}/subkey1'.format(d.key), 20)
+        n30 = self.client.node.set('{}/subkey2'.format(d.key), 30)
+        self.assertEqual(int(n20.value), 20)
+        self.assertEqual(int(n30.value), 30)
     
     def _test_ttl_in_directory(self):
         r = self.client.node.set('/test_2056/val1', 5, ttl=60)

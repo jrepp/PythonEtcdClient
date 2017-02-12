@@ -12,7 +12,11 @@ class TestCase(unittest.TestCase):
 
     def tearDown(self):
         for n in self.nodes:
-            self.client.node.delete(n.key)
+            if n.is_directory:
+                self.client.directory.delete_recursive(n.key)
+            else:
+                self.client.node.delete(n.key)
+
         self.nodes = []
         self.client = None 
 
@@ -30,11 +34,13 @@ class TestCase(unittest.TestCase):
 
         node = self.client.node.create_only(**args)
         self.nodes.append(node)
+        assert(not node.is_directory)
         return node 
 
-    def random_dir(self):
-        k = self.random_key('/testdir')
+    def random_dir(self, base='/'):
+        k = self.random_key('{}testdir_{}'.format(base, random.randint(1, 100000)))
         node = self.client.directory.create(k)
+        assert(node.is_directory)
         self.nodes.append(node)
         return node 
 
