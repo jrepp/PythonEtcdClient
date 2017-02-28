@@ -11,7 +11,7 @@ class NodeTestCase(common.TestCase):
     def test_value(self):
         n = self.random_node()
         self.assertTrue(n)
-        self.assertFalse(n.prev_node)
+        self.assertFalse(n.prev.value)
         self.assertIsNotNone(n.value)
 
     def test_create_only(self):    

@@ -33,8 +33,8 @@ class TestCase(unittest.TestCase):
             args['ttl'] = ttl
 
         node = self.client.node.create_only(**args)
-        self.nodes.append(node)
         assert(not node.is_directory)
+        self.nodes.append(node)
         return node 
 
     def random_dir(self, base='/'):

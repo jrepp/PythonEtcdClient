@@ -1,21 +1,24 @@
-#!/usr/bin/python
+#!/usr/bin/env python
 
 import sys
 import unittest
 import os
 import inspect
 import re
+import time
+import logging
 
 from optparse import OptionParser
+
+_file_name = os.path.abspath(inspect.getfile(inspect.currentframe()))
+_self_path = os.path.dirname(_file_name)
+_parent_path = os.path.normpath(os.path.join(_self_path, os.pardir))
 
 #
 # Fix up import path if running directly
 #
 if __name__ == '__main__':
-    filename = os.path.abspath(inspect.getfile(inspect.currentframe()))
-    thispath = os.path.dirname(filename)
-    normpath = os.path.normpath(os.path.join(thispath, os.pardir))
-    sys.path.insert(0, normpath)
+    sys.path.insert(0, _parent_path)
 
 import etcd
 
@@ -23,14 +26,141 @@ import test_system
 import test_node
 import test_directory
 
-def setup_requests_logging(verbose):
+class TestRunner(object):
+    def __init__(self, test_verbosity, modules, pattern=None):
+        self.test_verbosity = test_verbosity
+        self.modules = modules
+        self.pattern = pattern
+        
+    def reload(self):
+        self.log.info('reloading {} modules'.format(len(self.modules)))
+        self.modules = [reload(m) for m in self.modules]
+
+    def suites(self):
+        return [m.suite() for m in self.modules]
+
+    def suite(self):
+        return unittest.TestSuite(self.suites())
+
+    def specific_suite(self, suite_name):
+        suite = unittest.TestSuite()
+        for suite in self.suites():
+            for t in suite:
+                if t.id().startswith(suite_name):
+                    suite.addTest(t)
+        return suite
+
+    def filtered_suite(self):
+        all_suites = self.suites()
+        def expand_tests():
+            for suite in all_suites:
+                for t in suite:
+                    yield t
+        def pattern_match(test):
+            name = test.id()
+            return self.pattern.match(name) is not None
+        return unittest.TestSuite(filter(pattern_match, expand_tests()))
+
+    def run(self, suite=None):
+        if suite is None:
+            if self.pattern is not None:
+                suite = self.filtered_suite(self)
+            else:   
+                suite = self.suite()
+        utrunner = unittest.TextTestRunner(
+            verbosity=self.test_verbosity,
+            failfast=True)
+        utrunner.run(suite)
+
+    def list(self):            
+        for suite in self.suites():
+            for t in suite:
+                print t.id()
+
+
+class TestObserver(object):
+    def __init__(self, base_paths, runner):
+        """
+        Setup a file observer to automatically re-run tests when a python
+        file changes.
+        """
+        self.last_discover = None
+        self.last_check = None
+        self.file_status = {}
+        self.base_paths = base_paths
+        self.log = logging.getLogger('testobs')
+        self.runner = runner
+
+    def discover(self):
+        def each_py(base_path):
+            for root, dirs, files in os.walk(base_path):
+                for f in files:
+                    if f.endswith('.py'):
+                        yield os.path.join(root, f)
+        def discover_in_path(base_path):
+            for f in each_py(base_path):
+                self.file_status[f] = os.stat(f).st_mtime
+        map(discover_in_path, self.base_paths)
+        self.log.info('monitoring {} files for changes'.format(len(self.file_status)))
+    
+    def poll(self):
+        now = time.time()
+        if not self.last_discover or self.last_discover > now + 3:
+            self.discover()
+            self.last_discover = now
+        if not self.last_check or self.last_discover > now + 1:
+            self.check()
+
+
+    def check(self):
+        # self.log.debug('looking for changes')
+        changes = []
+        deletes = []
+        for f, mtime in self.file_status.iteritems():
+            try_count = 0
+            # File may just appear gone temporarily while being written
+            # if it's still missing, remove it from the file map
+            while not os.path.exists(f) and try_count < 3:
+                self.log.debug('file does not exist {}'.format(f))
+                try_count += 1
+                time.sleep(1)
+                continue
+            if not os.path.exists(f):
+               continue
+
+            st_new = os.stat(f)
+            if st_new.st_mtime > mtime:
+                changes.append((f, st_new.st_mtime,))
+
+        # Process removes and changes
+        # self.log.debug('detected {} changes, {} removes'.format(len(changes), len(deletes)))
+        
+        for f, mtime in deletes:
+           self.file_status.pop(f) 
+        
+        run_all = False
+        for f, mtime in changes:
+            name = os.path.split(f)
+            self.file_status[f] = mtime
+            if name[-1].startswith('test_'):
+                self.log.info('test suite changed {}'.format(name))
+                self.runner.reload()
+                self.runner.run(self.runner.specific_suite(f))
+            else:
+                self.log.info('file changed {}'.format(name))
+                run_all = True
+         
+        if run_all:
+            self.runner.reload()
+            self.runner.run()
+
+
+def setup_requests_logging(log_level):
+    """
+    Enable logging for the requests library, useful for diagnosing 
+    protocol issues at the API level.
+    """
     import requests
-    import logging
-
-    log_level = logging.INFO
-    if verbose:
-        log_level = logging.DEBUG
-
     # These two lines enable debugging at httplib level (requests->urllib3->http.client)
     # You will see the REQUEST, including HEADERS and DATA, and RESPONSE with HEADERS but without DATA.
     # The only thing missing will be the response.body which is not logged.
@@ -42,14 +172,12 @@ def setup_requests_logging(verbose):
         http_client.HTTPConnection.debuglevel = 1
 
     # You must initialize logging, otherwise you'll not see debug output.
-    logging.basicConfig()
-    logging.getLogger().setLevel(log_level)
     requests_log = logging.getLogger("requests.packages.urllib3")
     requests_log.setLevel(log_level)
     requests_log.propagate = True
 
 
-def run():
+def main():
     parser = OptionParser()
     parser.add_option('-l', '--list', dest='list', action='store_true',
         help='List all test cases')
@@ -59,43 +187,57 @@ def run():
         help='Enable verbose logging')
     parser.add_option('-f', '--filter', dest='filter', type='string', action='store',
         help='Filter test cases with a regular expression')
+    parser.add_option('-a', '--auto', dest='auto', action='store_true',
+        help='Run suite in automatic mode, watching for changes')
     options, args = parser.parse_args()
-
-    all_tests = [
-        test_system.suite(),
-        test_node.suite(),
-        test_directory.suite(),
-    ]
-
-    if options.list:
-        for suite in all_tests:
-            for t in suite:
-                print t.id()
-        return
-
-    if options.filter:
-        pattern = re.compile(options.filter)
-        def expand_tests():
-            for suite in all_tests:
-                for t in suite:
-                    yield t
-             
-        def pattern_match(test):
-            name = test.id()
-            return pattern.match(name) is not None
-        all_tests = unittest.TestSuite(filter(pattern_match, expand_tests()))
-    else:
-        all_tests = unittest.TestSuite(all_tests)
-
+    
+    # Configure logging
     test_verbosity = 1 
     if options.verbose:
         test_verbosity = 3
+        log_level = logging.DEBUG
+    else:
+        log_level = logging.INFO
 
+    logging.basicConfig()
+    logging.getLogger().setLevel(log_level)
+
+    # Configure logging for the 'requests' library
     if options.requests:
-        setup_requests_logging(options.verbose)
+        setup_requests_logging(log_level)
 
-    unittest.TextTestRunner(verbosity=test_verbosity, failfast=True).run(all_tests)
+    # Remove tests based on regex filter
+    if options.filter:
+        pattern = re.compile(options.filter)
+    else:
+        pattern = None    
+    
+    # Wrap the test modules with a new runner 
+    test_modules = [test_system, test_node, test_directory]
+    runner = TestRunner(test_verbosity, test_modules, pattern)
+
+    # List all tests and exit 
+    if options.list:
+        runner.list()
+        return
+
+
+    # Execute selected tets
+
+    runner.run()
+
+    # Run auto-testing observer
+    if options.auto:
+        lib_path = os.path.join(_parent_path, 'etcd')
+        test_path = _self_path
+        try:
+            obs = TestObserver([lib_path, test_path], runner)
+            while True:
+                obs.poll()
+                time.sleep(.2)
+        except KeyboardInterrupt:
+            pass
 
 if __name__ == '__main__':
-    run()
+    main()
 
