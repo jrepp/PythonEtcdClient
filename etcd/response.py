@@ -10,11 +10,12 @@ from collections import namedtuple
 from os.path import basename
 from datetime import datetime, timedelta
 
+
 _logger = logging.getLogger(__name__)
+
 
 A_DELETE = 'delete'
 A_CAD = 'compareAndDelete'
-
 
 
 def _process_ttl(json):
@@ -138,4 +139,3 @@ class Node(object):
                     node_count_phrase, ttl_phrase, self.created_index, 
                     self.modified_index)
 
-    

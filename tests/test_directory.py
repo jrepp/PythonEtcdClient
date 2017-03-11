@@ -37,16 +37,22 @@ class DirectoryTestCase(common.TestCase):
     
     def test_children(self):        
         n = self.random_dir()
-        c = ['key1','key2','key3']
+        c = ['key1','key2', 'key4', 'key5', 'key3']
         def create_child(name):
             self.client.node.set(os.path.join(n.key, name), name)
         map(create_child, c)
         n = self.client.directory.list(n.key)
         self.assert_(n.children)
-        self.assertEqual(len(n.children), 3)
+        self.assertEqual(len(n.children), 5)
+
+        n = self.client.directory.list(n.key, sorted=True)
+        self.assert_(n.children)
+        self.assertEqual(len(n.children), 5)
+        self.assertEqual(os.path.split(n.children[0].key)[-1], 'key1')
+        self.assertEqual(os.path.split(n.children[4].key)[-1], 'key5')
+
         self.client.directory.delete_recursive(n.key) 
         
-    
     def test_delete(self):
         n = self.random_dir()
         self.client.directory.delete(n.key)

@@ -17,7 +17,6 @@ from etcd.directory_ops import DirectoryOps
 from etcd.node_ops import NodeOps
 from etcd.server_ops import ServerOps
 from etcd.stat_ops import StatOps
-from etcd.inorder_ops import InOrderOps
 from etcd.modules.lock import LockMod
 from etcd.modules.leader import LeaderMod
 from etcd.response import Node
@@ -414,20 +413,6 @@ class Client(object):
         except AttributeError:
             self.__stat = StatOps(self)
             return self.__stat
-
-    @property
-    def inorder(self):
-        """Return an instance of the class having the "in-order keys" 
-        functionality.
-
-        :rtype: :class:`etcd.inorder_ops.InOrderOps`
-        """
-
-        try:
-            return self.__inorder
-        except AttributeError:
-            self.__inorder = InOrderOps(self)
-            return self.__inorder
 
     @property
     def module(self):

@@ -8,7 +8,12 @@ from etcd.common_ops import CommonOps
 class DirectoryOps(CommonOps):
     """Functions specific to directory management."""
 
-    def list(self, path, recursive=False, force_consistent=False, force_quorum=False):
+    def list(   self,
+                path,
+                recursive=False,
+                sorted=False,
+                force_consistent=False,
+                force_quorum=False):
         """Return a list of the nodes.
 
         :param recursive: Return all children, and children-of-children.
@@ -33,6 +38,9 @@ class DirectoryOps(CommonOps):
 
         if force_quorum is True:
             parameters['quorum'] = 'true'
+
+        if sorted is True:
+            parameters['sorted'] = 'true'
 
         return self.client.send(2, 'get', fq_path, parameters=parameters)
 

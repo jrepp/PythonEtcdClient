@@ -51,6 +51,7 @@ class TestRunner(object):
         return suite
 
     def filtered_suite(self):
+        print 'filtering with {}'.format(self.pattern)
         all_suites = self.suites()
         def expand_tests():
             for suite in all_suites:
@@ -61,22 +62,31 @@ class TestRunner(object):
             return self.pattern.match(name) is not None
         return unittest.TestSuite(filter(pattern_match, expand_tests()))
 
+    def default_suite(self):
+        if self.pattern is not None:
+            return self.filtered_suite()
+        else:
+            return self.suite()
+
     def run(self, suite=None):
-        if suite is None:
-            if self.pattern is not None:
-                suite = self.filtered_suite(self)
-            else:   
-                suite = self.suite()
-        utrunner = unittest.TextTestRunner(
-            verbosity=self.test_verbosity,
-            failfast=True)
+        suite = suite or self.default_suite()
+        utrunner = unittest.TextTestRunner(verbosity=self.test_verbosity, failfast=True)
         utrunner.run(suite)
 
     def list(self):            
-        for suite in self.suites():
-            for t in suite:
+        def list_r(t):
+            if isinstance(t, unittest.TestCase):
                 print t.id()
+            if isinstance(t, unittest.TestSuite):
+                for child in t:
+                    list_r(child)
+        list_r(self.default_suite())
 
+#print dir(self.default_suite())
+#        for suite in self.suites():
+#            for t in suite:
+#                print t.id()
+#
 
 class TestObserver(object):
     def __init__(self, base_paths, runner):
@@ -213,14 +223,18 @@ def main():
         pattern = None    
     
     # Wrap the test modules with a new runner 
-    test_modules = [test_system, test_node, test_directory]
+    test_modules = [
+        test_system,
+        test_node,
+        test_directory,
+    ]
+
     runner = TestRunner(test_verbosity, test_modules, pattern)
 
     # List all tests and exit 
     if options.list:
         runner.list()
         return
-
 
     # Execute selected tets
 
