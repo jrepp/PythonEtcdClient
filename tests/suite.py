@@ -26,6 +26,7 @@ import test_system
 import test_node
 import test_directory
 import test_document
+import test_hl
 
 class TestRunner(object):
     def __init__(self, test_verbosity, modules, pattern=None):
@@ -52,7 +53,6 @@ class TestRunner(object):
         return suite
 
     def filtered_suite(self):
-        print('filtering with {}'.format(self.pattern))
         all_suites = self.suites()
         def expand_tests():
             for suite in all_suites:
@@ -214,6 +214,7 @@ def main():
     # Remove tests based on regex filter
     if options.filter:
         pattern = re.compile(options.filter)
+        print('filtering with {}'.format(options.filter))
     else:
         pattern = None    
     
@@ -223,6 +224,7 @@ def main():
         test_node,
         test_directory,
         test_document,
+        test_hl,
     ]
 
     runner = TestRunner(test_verbosity, test_modules, pattern)
