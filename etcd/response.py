@@ -28,7 +28,7 @@ def _process_ttl(json):
         ttl = None
         expiration = None
     else:
-        # print '_process_ttl {}'.format(expiration)
+        # print('_process_ttl {}'.format(expiration))
         ttl = json['ttl'],
         expiration = dateutil.parser.parse(expiration)
     return (ttl, expiration)

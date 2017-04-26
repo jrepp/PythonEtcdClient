@@ -51,7 +51,7 @@ class TestRunner(object):
         return suite
 
     def filtered_suite(self):
-        print 'filtering with {}'.format(self.pattern)
+        print('filtering with {}'.format(self.pattern))
         all_suites = self.suites()
         def expand_tests():
             for suite in all_suites:
@@ -76,16 +76,16 @@ class TestRunner(object):
     def list(self):            
         def list_r(t):
             if isinstance(t, unittest.TestCase):
-                print t.id()
+                print(t.id())
             if isinstance(t, unittest.TestSuite):
                 for child in t:
                     list_r(child)
         list_r(self.default_suite())
 
-#print dir(self.default_suite())
+#print(dir(self.default_suite()))
 #        for suite in self.suites():
 #            for t in suite:
-#                print t.id()
+#                print(t.id())
 #
 
 class TestObserver(object):
