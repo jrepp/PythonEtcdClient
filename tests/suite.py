@@ -25,6 +25,7 @@ import etcd
 import test_system
 import test_node
 import test_directory
+import test_document
 
 class TestRunner(object):
     def __init__(self, test_verbosity, modules, pattern=None):
@@ -81,12 +82,6 @@ class TestRunner(object):
                 for child in t:
                     list_r(child)
         list_r(self.default_suite())
-
-#print(dir(self.default_suite()))
-#        for suite in self.suites():
-#            for t in suite:
-#                print(t.id())
-#
 
 class TestObserver(object):
     def __init__(self, base_paths, runner):
@@ -227,6 +222,7 @@ def main():
         test_system,
         test_node,
         test_directory,
+        test_document,
     ]
 
     runner = TestRunner(test_verbosity, test_modules, pattern)

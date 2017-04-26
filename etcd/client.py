@@ -4,7 +4,6 @@ import logging
 import requests
 import ssl
 import semver
-import simplejson
 
 from os import environ
 from requests.exceptions import ConnectionError

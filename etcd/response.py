@@ -36,7 +36,11 @@ def _process_ttl(json):
 
 class Node(object):
     def __init__(self):
-        pass
+        self.key = None
+        self.json = None
+        self.is_error = False
+        self.is_deleted = False
+        self._children = None
     
     def from_response(self, response, verb, path):
         try:
@@ -55,8 +59,6 @@ class Node(object):
 
         if 'action' in json:
             self.is_deleted = json['action'] in (A_DELETE, A_CAD)
-        else:
-            self.is_deleted = False
 
         return self.from_node_json(json['node'])
 
@@ -66,7 +68,6 @@ class Node(object):
             return self
 
         self.json = json
-        self.is_error = False
 
         if json.get('dir', False):
             self._children = json.get('nodes', [])

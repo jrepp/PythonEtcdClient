@@ -1,3 +1,5 @@
+import simplejson
+
 from requests.exceptions import HTTPError
 from requests.status_codes import codes
 
@@ -161,3 +163,21 @@ class DirectoryOps(CommonOps):
 
         return self.compare_and_delete(path, is_recursive=True, 
                                        current_index=current_index)
+
+    def document(self, path):
+        def docify(doc, node):
+            if node is None:
+                return
+            for c in node.children:
+                attrib_key = c.key.split('/')[-1]
+                if c.children:
+                    subdoc = {}
+                    docify(subdoc, c)
+                    doc[attrib_key] = subdoc
+                else:
+                    doc[attrib_key] = c.value
+
+        rootdoc = {}
+        node = self.list(path, recursive=True) 
+        docify(rootdoc, node)
+        return rootdoc
