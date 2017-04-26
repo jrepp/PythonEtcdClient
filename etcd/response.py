@@ -37,10 +37,12 @@ def _process_ttl(json):
 class Node(object):
     def __init__(self):
         self.key = None
+        self.value = None
         self.json = None
         self.is_error = False
         self.is_deleted = False
-        self._children = None
+        self.created_index = 0
+        self.modified_index = 0
     
     def from_response(self, response, verb, path):
         try:
@@ -69,22 +71,23 @@ class Node(object):
 
         self.json = json
 
+        # Directory nodes are formated as {'nodes':[], 'dir':True}
         if json.get('dir', False):
             self._children = json.get('nodes', [])
         else:
             self._children = None
+            self.created_index = json['createdIndex']
+            self.modified_index = json['modifiedIndex']
 
-        self.created_index = json['createdIndex']
-        self.modified_index = json['modifiedIndex']
-        self.key = json['key']
+            # Alive nodes will contain values
+            self.value = json.get('value')
+            self.prev = Node().from_node_json(json.get('prevNode'))
+        
+        # Get key if it exists
+        self.key = json.get('key')
 
         # >> Process TTL-related properties. 
         self.ttl, self.expiration = _process_ttl(json)
-        
-        # Alive nodes will contain values
-        self.value = json.get('value')
-
-        self.prev = Node().from_node_json(json.get('prevNode'))
 
         return self
 
@@ -96,15 +99,15 @@ class Node(object):
         # Capture error metadata
         self.is_error = True
         self.error_code = json['errorCode']
-        self.error_message = json['message']
+        self.error_string = json['message']
         self.key = json['cause']
         self.index = json['index']
         self.set_defaults()
         return self
 
     def set_defaults(self):
-        self.created_index = None
-        self.modified_index = None
+        self.created_index = 0
+        self.modified_index = 0
         self.prev = None
         self._children = None
         self.ttl = None
@@ -129,9 +132,20 @@ class Node(object):
     def is_hidden(self):
         return self.key and self.key[0] == '_'
 
+    @property
+    def is_valid(self):
+        return self.is_deleted and not self.is_error and self.key
+
+    @property
+    def error_message(self):
+        if self.is_error:
+            return '{} ({})'.format(self.error_string, self.error_code)
+        else:
+            return None
+
     def __repr__(self):
         node_count_phrase = (len(self._children) if self._children else '<NA>')
-        error_phrase = ('{} ({})'.format(self.error_message, self.error_code) if self.is_error else '<NA>')
+        error_phrase = (self.error_message if self.is_error else '<NA>')
         ttl_phrase = '{}: {}'.format(self.ttl, self.expiration)
         return '<NODE({}) ERROR=[{}] IS_HID=[{}] IS_DEL=[{}] IS_DIR=[{}] ' \
                     'COUNT=[{}] TTL=[{}] CI=({}) MI=({})>'.format(

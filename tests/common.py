@@ -11,6 +11,8 @@ class TestCase(unittest.TestCase):
         self.nodes = []
 
     def tearDown(self):
+        pass
+
         for n in self.nodes:
             if n.is_directory:
                 self.client.directory.delete_recursive(n.key)

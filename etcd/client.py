@@ -133,7 +133,7 @@ class Client(object):
 
     def __init__(self,
                  host='127.0.0.1',
-                 port=4001,
+                 port=2379,
                  is_ssl=False, ssl_do_verify=_SSL_DO_VERIFY, 
                  ssl_ca_bundle_filepath=_SSL_CA_BUNDLE_FILEPATH, 
                  ssl_client_cert_filepath=_SSL_CLIENT_CRT_FILEPATH, 
